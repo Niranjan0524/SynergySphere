@@ -8,7 +8,7 @@ const { asyncErrorHandler, createAppError } = require('../middleware/errorHandle
 
 /**
  * Get user's projects
- * GET /api/v1/projects
+ * GET /api/v1/projects /
  */
 const getUserProjects = asyncErrorHandler(async (req, res) => {
   const { userId } = req.query; // Get userId from query params since we removed auth middleware
