@@ -5,6 +5,8 @@ import Login from '../components/Login';
 import SignUp from '../components/SignUp_New';
 import ForgotPassword from '../components/ForgotPassword_New';
 import Dashboard from '../components/Dashboard';
+import TaskPage from '../components/TaskPage';
+import ProjectPage from '../components/ProjectPage';
 
 // Protected Route Component
 export const ProtectedRoute = ({ children }) => {
@@ -25,27 +27,15 @@ export const AppRoutes = () => {
       {/* Public Routes */}
       <Route 
         path="/login" 
-        element={
-          <PublicRoute>
-            <Login />
-          </PublicRoute>
-        } 
+        element={<Login />} 
       />
       <Route 
         path="/signup" 
-        element={
-          <PublicRoute>
-            <SignUp />
-          </PublicRoute>
-        } 
+        element={<SignUp />} 
       />
       <Route 
         path="/forgot-password" 
-        element={
-          <PublicRoute>
-            <ForgotPassword />
-          </PublicRoute>
-        } 
+        element={<ForgotPassword />} 
       />
 
       {/* Protected Routes */}
@@ -57,10 +47,25 @@ export const AppRoutes = () => {
           </ProtectedRoute>
         } 
       />
+      <Route 
+        path="/tasks" 
+        element={
+          <ProtectedRoute>
+            <TaskPage />
+          </ProtectedRoute>
+        } 
+      />
+      <Route 
+        path="/projects" 
+        element={
+          <ProtectedRoute>
+            <ProjectPage />
+          </ProtectedRoute>
+        } 
+      />
 
       {/* Default redirect */}
       <Route path="/" element={<Navigate to="/login" replace />} />
-      
       {/* Catch all route - redirect to login */}
       <Route path="*" element={<Navigate to="/login" replace />} />
     </Routes>
