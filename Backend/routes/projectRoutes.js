@@ -2,22 +2,22 @@ const express = require('express');
 const router = express.Router();
 const projectController = require('../controllers/projectController');
 const { authenticate } = require('../middleware/auth');
-const { validateProject, validateProjectMember } = require('../middleware/validation');
+const { validateProject, validateProjectCreation, validateProjectMember } = require('../middleware/validation');
 
 // Project routes
 /**
  * GET /projects
- * Get all projects for the authenticated user
- * Query: ?limit=10&offset=0&status=active
+ * Get all projects for a user
+ * Query: ?userId=1&limit=10&offset=0&status=active
  */
-router.get('/', authenticate, projectController.getUserProjects);
+router.get('/', projectController.getUserProjects);
 
 /**
  * POST /projects
  * Create a new project
- * Body: { name, description, deadline, isPrivate }
+ * Body: { ownerID, managerID, name, deadline, priority, status, description }
  */
-router.post('/', authenticate, validateProject, projectController.createProject);
+router.post('/', validateProjectCreation, projectController.createProject);
 
 /**
  * GET /projects/:projectId

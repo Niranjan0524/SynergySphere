@@ -1,5 +1,4 @@
-const Project = require('../models/Project');
-const User = require('../models/User');
+const { executeQuery } = require('../models/database');
 const { asyncErrorHandler, createAppError } = require('../middleware/errorHandler');
 
 /**
@@ -12,26 +11,67 @@ const { asyncErrorHandler, createAppError } = require('../middleware/errorHandle
  * GET /api/v1/projects
  */
 const getUserProjects = asyncErrorHandler(async (req, res) => {
-  const userId = req.user.id;
+  const { userId } = req.query; // Get userId from query params since we removed auth middleware
   const { status, search, limit = 20, offset = 0 } = req.query;
 
-  const filters = {};
-  if (status) filters.status = status;
-  if (search) filters.search = search;
+  if (!userId) {
+    throw createAppError('userId is required', 400);
+  }
 
-  const projects = await Project.getUserProjects(userId, filters, parseInt(limit), parseInt(offset));
-
-  res.status(200).json({
-    success: true,
-    data: {
-      projects,
-      pagination: {
-        limit: parseInt(limit),
-        offset: parseInt(offset),
-        total: projects.length
-      }
+  try {
+    let query = `
+      SELECT p.*, 
+             u1.name as owner_name,
+             u2.name as manager_name,
+             (SELECT COUNT(DISTINCT ptu.user_id) FROM ProjectTaskUser ptu WHERE ptu.project_id = p.project_id AND ptu.task_id = 0) as member_count
+      FROM Projects p
+      LEFT JOIN Users u1 ON p.owner_id = u1.user_id
+      LEFT JOIN Users u2 ON p.manager_id = u2.user_id
+      LEFT JOIN ProjectTaskUser ptu ON p.project_id = ptu.project_id AND ptu.task_id = 0
+      WHERE ptu.user_id = ?
+    `;
+    
+    const params = [userId];
+    
+    // Add filters
+    if (status) {
+      query += ' AND p.status = ?';
+      params.push(status);
     }
-  });
+    
+    if (search) {
+      query += ' AND (p.name LIKE ? OR p.description LIKE ?)';
+      params.push(`%${search}%`, `%${search}%`);
+    }
+    
+    query += ' GROUP BY p.project_id ORDER BY p.updated_at DESC LIMIT ? OFFSET ?';
+    params.push(parseInt(limit), parseInt(offset));
+
+    const result = await executeQuery(query, params);
+    
+    if (!result.success) {
+      throw createAppError('Failed to fetch projects', 500);
+    }
+
+    res.status(200).json({
+      success: true,
+      data: {
+        projects: result.data,
+        pagination: {
+          limit: parseInt(limit),
+          offset: parseInt(offset),
+          total: result.data.length
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Get user projects error:', error);
+    if (error.statusCode) {
+      throw error;
+    }
+    throw createAppError('Failed to fetch projects', 500);
+  }
 });
 
 /**
@@ -39,22 +79,165 @@ const getUserProjects = asyncErrorHandler(async (req, res) => {
  * POST /api/v1/projects
  */
 const createProject = asyncErrorHandler(async (req, res) => {
-  const userId = req.user.id;
-  const projectData = req.body;
+  const { ownerID, managerID, name, deadline, priority, status, description } = req.body;
 
-  const project = await Project.create(projectData, userId);
-  
-  if (!project) {
-    throw createAppError('Failed to create project', 500);
+  console.log('Project creation attempt:', { ownerID, managerID, name, deadline, priority, status, description });
+
+  // Validate required fields
+  if (!ownerID || !managerID || !name || !deadline || !priority || !status) {
+    throw createAppError('ownerID, managerID, name, deadline, priority, and status are required', 400);
   }
 
-  res.status(201).json({
-    success: true,
-    message: 'Project created successfully',
-    data: {
-      project
+  try {
+    console.log('1. Creating Projects table if not exists...');
+    // First, ensure the Projects table exists
+    const createTableQuery = `
+      CREATE TABLE IF NOT EXISTS Projects (
+        project_id INT AUTO_INCREMENT PRIMARY KEY,
+        owner_id INT NOT NULL,
+        manager_id INT NOT NULL,
+        name VARCHAR(200) NOT NULL,
+        start_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+        deadline DATETIME NOT NULL,
+        priority ENUM('low','medium','high') DEFAULT 'medium',
+        status ENUM('waiting','progress','completed') DEFAULT 'waiting',
+        description TEXT,
+        profile_image VARCHAR(255),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      )
+    `;
+    
+    const tableResult = await executeQuery(createTableQuery);
+    console.log('Projects table creation result:', tableResult.success ? 'SUCCESS' : tableResult.error);
+
+    console.log('2. Validating user IDs...');
+    // Check if owner and manager exist
+    const checkOwnerQuery = 'SELECT user_id FROM Users WHERE user_id = ?';
+    const ownerResult = await executeQuery(checkOwnerQuery, [ownerID]);
+    
+    if (!ownerResult.success || ownerResult.data.length === 0) {
+      throw createAppError('Owner ID does not exist', 400);
     }
-  });
+
+    const checkManagerQuery = 'SELECT user_id FROM Users WHERE user_id = ?';
+    const managerResult = await executeQuery(checkManagerQuery, [managerID]);
+    
+    if (!managerResult.success || managerResult.data.length === 0) {
+      throw createAppError('Manager ID does not exist', 400);
+    }
+
+    console.log('3. Creating new project...');
+    // Convert ISO datetime to MySQL datetime format
+    const deadlineDate = new Date(deadline);
+    const mysqlDeadline = deadlineDate.toISOString().slice(0, 19).replace('T', ' ');
+    const currentTime = new Date().toISOString().slice(0, 19).replace('T', ' ');
+    console.log('Converted deadline from', deadline, 'to', mysqlDeadline);
+    console.log('Setting start_time to current time:', currentTime);
+    
+    // Create new project
+    const createProjectQuery = `
+      INSERT INTO Projects (owner_id, manager_id, name, start_time, deadline, priority, status, description) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `;
+    
+    const result = await executeQuery(createProjectQuery, [ownerID, managerID, name, currentTime, mysqlDeadline, priority, status, description || null]);
+    console.log('Project creation result:', result.success ? `SUCCESS - ID: ${result.data.insertId}` : result.error);
+    
+    if (!result.success) {
+      console.error('Database error during project creation:', result.error);
+      throw createAppError('Failed to create project', 500);
+    }
+
+    console.log('4. Creating ProjectTaskUser table if not exists...');
+    // Ensure ProjectTaskUser table exists for linking
+    const createLinkTableQuery = `
+      CREATE TABLE IF NOT EXISTS ProjectTaskUser (
+        project_id INT NOT NULL,
+        task_id INT NOT NULL DEFAULT 0,
+        user_id INT NOT NULL,
+        role ENUM('owner','manager','member') DEFAULT 'member',
+        PRIMARY KEY (project_id, task_id, user_id)
+      )
+    `;
+    
+    await executeQuery(createLinkTableQuery);
+
+    console.log('5. Adding owner to project members...');
+    // Add owner to ProjectTaskUser as owner
+    const linkOwnerQuery = `
+      INSERT INTO ProjectTaskUser (project_id, task_id, user_id, role) 
+      VALUES (?, 0, ?, 'owner')
+    `;
+    
+    const linkOwnerResult = await executeQuery(linkOwnerQuery, [result.data.insertId, ownerID]);
+    console.log('Owner linking result:', linkOwnerResult.success ? 'SUCCESS' : linkOwnerResult.error);
+
+    // Add manager to ProjectTaskUser if different from owner
+    if (managerID !== ownerID) {
+      console.log('6. Adding manager to project members...');
+      const linkManagerQuery = `
+        INSERT INTO ProjectTaskUser (project_id, task_id, user_id, role) 
+        VALUES (?, 0, ?, 'manager')
+      `;
+      
+      const linkManagerResult = await executeQuery(linkManagerQuery, [result.data.insertId, managerID]);
+      console.log('Manager linking result:', linkManagerResult.success ? 'SUCCESS' : linkManagerResult.error);
+    }
+
+    console.log('7. Retrieving created project...');
+    // Get the created project with additional info
+    const getProjectQuery = `
+      SELECT p.*, 
+             u1.name as owner_name,
+             u2.name as manager_name
+      FROM Projects p
+      LEFT JOIN Users u1 ON p.owner_id = u1.user_id
+      LEFT JOIN Users u2 ON p.manager_id = u2.user_id
+      WHERE p.project_id = ?
+    `;
+    
+    const projectResult = await executeQuery(getProjectQuery, [result.data.insertId]);
+    console.log('Project retrieval result:', projectResult.success ? 'SUCCESS' : projectResult.error);
+    
+    if (!projectResult.success || projectResult.data.length === 0) {
+      console.error('Failed to retrieve created project:', projectResult.error);
+      throw createAppError('Failed to retrieve created project', 500);
+    }
+
+    const project = projectResult.data[0];
+    console.log('8. Project created successfully:', { 
+      projectId: project.project_id, 
+      name: project.name, 
+      owner: project.owner_name, 
+      manager: project.manager_name 
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'Project created successfully',
+      data: {
+        projectId: project.project_id,
+        ownerID: project.owner_id,
+        managerID: project.manager_id,
+        name: project.name,
+        deadline: project.deadline,
+        priority: project.priority,
+        status: project.status,
+        description: project.description,
+        ownerName: project.owner_name,
+        managerName: project.manager_name,
+        createdAt: project.created_at
+      }
+    });
+
+  } catch (error) {
+    console.error('Project creation error:', error);
+    if (error.statusCode) {
+      throw error; // Re-throw custom errors
+    }
+    throw createAppError('Failed to create project', 500);
+  }
 });
 
 /**

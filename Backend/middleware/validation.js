@@ -72,7 +72,55 @@ const validateUserUpdate = [
 ];
 
 /**
- * Project validation
+ * Project creation validation
+ */
+const validateProjectCreation = [
+  body('ownerID')
+    .isInt({ min: 1 })
+    .withMessage('ownerID must be a valid positive integer'),
+  body('managerID')
+    .isInt({ min: 1 })
+    .withMessage('managerID must be a valid positive integer'),
+  body('name')
+    .trim()
+    .isLength({ min: 3, max: 200 })
+    .withMessage('Project name must be between 3 and 200 characters'),
+  body('deadline')
+    .notEmpty()
+    .withMessage('Deadline is required')
+    .custom((value) => {
+      // Try to parse the date
+      const deadlineDate = new Date(value);
+      
+      // Check if it's a valid date
+      if (isNaN(deadlineDate.getTime())) {
+        throw new Error('Please provide a valid deadline date');
+      }
+      
+      // Check if deadline is in the future
+      const now = new Date();
+      if (deadlineDate <= now) {
+        throw new Error('Deadline must be in the future');
+      }
+      
+      return true;
+    }),
+  body('priority')
+    .isIn(['low', 'medium', 'high'])
+    .withMessage('Priority must be one of: low, medium, high'),
+  body('status')
+    .isIn(['waiting', 'progress', 'completed'])
+    .withMessage('Status must be one of: waiting, progress, completed'),
+  body('description')
+    .optional()
+    .trim()
+    .isLength({ max: 1000 })
+    .withMessage('Description must not exceed 1000 characters'),
+  handleValidationErrors
+];
+
+/**
+ * Project validation (legacy - keeping for backward compatibility)
  */
 const validateProject = [
   body('name')
@@ -194,6 +242,7 @@ module.exports = {
   validateLogin,
   validateUserUpdate,
   validateProject,
+  validateProjectCreation,
   validateProjectMember,
   validateTask,
   validatePagination,
