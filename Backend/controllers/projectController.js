@@ -8,50 +8,57 @@ const { asyncErrorHandler, createAppError } = require('../middleware/errorHandle
 
 /**
  * Get user's projects
- * GET /api/v1/projects
+ * GET /api/v1/projects/getProjects/:userId
  */
 const getUserProjects = asyncErrorHandler(async (req, res) => {
-  const { userId } = req.query; // Get userId from query params since we removed auth middleware
-  const { status, search, limit = 20, offset = 0 } = req.query;
+  const { userId } = req.params;
+  let { status, search, limit = 20, offset = 0 } = req.query;
 
+  console.log('Fetching projects for userId:', userId);
   if (!userId) {
     throw createAppError('userId is required', 400);
   }
+
+  // Ensure limit and offset are always valid integers
+  limit = parseInt(limit);
+  offset = parseInt(offset);
+  if (isNaN(limit) || limit < 1) limit = 20;
+  if (isNaN(offset) || offset < 0) offset = 0;
 
   try {
     let query = `
       SELECT p.*, 
              u1.name as owner_name,
-             u2.name as manager_name,
-             (SELECT COUNT(DISTINCT ptu.user_id) FROM ProjectTaskUser ptu WHERE ptu.project_id = p.project_id AND ptu.task_id = 0) as member_count
+             u2.name as manager_name
       FROM Projects p
       LEFT JOIN Users u1 ON p.owner_id = u1.user_id
       LEFT JOIN Users u2 ON p.manager_id = u2.user_id
-      LEFT JOIN ProjectTaskUser ptu ON p.project_id = ptu.project_id AND ptu.task_id = 0
-      WHERE ptu.user_id = ?
+      WHERE (p.owner_id = ? OR p.manager_id = ?)
     `;
-    
-    const params = [userId];
-    
-    // Add filters
+    const params = [userId, userId];
+
     if (status) {
       query += ' AND p.status = ?';
       params.push(status);
     }
-    
     if (search) {
       query += ' AND (p.name LIKE ? OR p.description LIKE ?)';
       params.push(`%${search}%`, `%${search}%`);
     }
-    
-    query += ' GROUP BY p.project_id ORDER BY p.updated_at DESC LIMIT ? OFFSET ?';
-    params.push(parseInt(limit), parseInt(offset));
+
+    // Directly inject limit/offset as numbers (never use ? for these)
+    query += ` ORDER BY p.project_id DESC LIMIT ${limit} OFFSET ${offset}`;
+
+    // Debug log for query and params
+    console.log('Executing SQL:', query);
+    console.log('With params:', params);
 
     const result = await executeQuery(query, params);
-    
     if (!result.success) {
       throw createAppError('Failed to fetch projects', 500);
     }
+
+    console.log('Query executed successfully, projects found:', result.data.length);
 
     res.status(200).json({
       success: true,

@@ -31,7 +31,7 @@ const authenticate = async (req, res, next) => {
         message: 'Account is inactive or suspended'
       });
     }
-
+    console.log('Authenticated User:', user);
     req.user = user;
     next();
   } catch (error) {

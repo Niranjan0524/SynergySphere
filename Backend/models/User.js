@@ -10,7 +10,7 @@ class User {
    * Find user by ID
    */
   static async findById(id) {
-    const query = 'SELECT user_id, name, email, profile_image, created_at, updated_at FROM Users WHERE user_id = ?';
+    const query = 'SELECT user_id, name, email, profile_image FROM Users WHERE user_id = ?';
     const result = await executeQuery(query, [id]);
     
     if (result.success && result.data.length > 0) {
@@ -77,7 +77,7 @@ class User {
     
     values.push(id); // Add ID for WHERE clause
     
-    const query = `UPDATE Users SET ${fields.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?`;
+    const query = `UPDATE Users SET ${fields.join(', ')} WHERE user_id = ?`;
     const result = await executeQuery(query, values);
     
     if (result.success) {
@@ -93,7 +93,7 @@ class User {
     const saltRounds = 12;
     const hashedPassword = await bcrypt.hash(newPassword, saltRounds);
     
-    const query = 'UPDATE Users SET password = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?';
+    const query = 'UPDATE Users SET password = ? WHERE user_id = ?';
     const result = await executeQuery(query, [hashedPassword, id]);
     
     return result.success;
@@ -137,7 +137,7 @@ class User {
    * Get all users
    */
   static async getAll(limit = 50, offset = 0, filters = {}) {
-    let query = 'SELECT user_id, name, email, profile_image, created_at FROM Users';
+    let query = 'SELECT user_id, name, email, profile_image FROM Users';
     const queryParams = [];
     const conditions = [];
     
@@ -151,7 +151,7 @@ class User {
       query += ' WHERE ' + conditions.join(' AND ');
     }
     
-    query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+    query += ' ORDER BY name ASC LIMIT ? OFFSET ?';
     queryParams.push(limit, offset);
     
     const result = await executeQuery(query, queryParams);

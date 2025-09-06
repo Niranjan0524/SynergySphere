@@ -10,7 +10,7 @@ const { validateProject, validateProjectCreation, validateProjectMember } = requ
  * Get all projects for a user
  * Query: ?userId=1&limit=10&offset=0&status=active
  */
-router.get('/', projectController.getUserProjects);
+router.get('/getProjects/:userId', projectController.getUserProjects);
 
 /**
  * POST /projects
