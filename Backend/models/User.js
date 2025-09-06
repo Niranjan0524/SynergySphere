@@ -39,7 +39,7 @@ class User {
     const { name, email, password } = userData;
     
     // Hash password
-    const saltRounds = 12;
+    const saltRounds = 10;
     const hashedPassword = await bcrypt.hash(password, saltRounds);
     
     const query = `
