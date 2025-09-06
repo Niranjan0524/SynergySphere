@@ -27,15 +27,27 @@ export const AppRoutes = () => {
       {/* Public Routes */}
       <Route 
         path="/login" 
-        element={<Login />} 
+        element={
+          <PublicRoute>
+            <Login />
+          </PublicRoute>
+        } 
       />
       <Route 
         path="/signup" 
-        element={<SignUp />} 
+        element={
+          <PublicRoute>
+            <SignUp />
+          </PublicRoute>
+        } 
       />
       <Route 
         path="/forgot-password" 
-        element={<ForgotPassword />} 
+        element={
+          <PublicRoute>
+            <ForgotPassword />
+          </PublicRoute>
+        } 
       />
 
       {/* Protected Routes */}
@@ -63,9 +75,17 @@ export const AppRoutes = () => {
           </ProtectedRoute>
         } 
       />
+      <Route 
+        path="/project/:projectId" 
+        element={
+          <ProtectedRoute>
+            <ProjectPage />
+          </ProtectedRoute>
+        } 
+      />
 
       {/* Default redirect */}
-      <Route path="/" element={<Navigate to="/login" replace />} />
+      <Route path="/" element={<Navigate to="/dashboard" replace />} />
       {/* Catch all route - redirect to login */}
       <Route path="*" element={<Navigate to="/login" replace />} />
     </Routes>
