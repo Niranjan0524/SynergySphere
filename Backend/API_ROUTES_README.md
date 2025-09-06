@@ -1,63 +1,178 @@
-# SynergySphere Backend API Router Structure
+# SynergySphere Backend
 
 ## Overview
 
-This backend follows a modular architecture with clear separation of concerns:
+SynergySphere backend is a modular Node.js/Express API for project, task, and team management. It features robust authentication, user/project/task management, invitations, and tagging, with a normalized SQL database schema.
 
-- **Routes**: Define API endpoints and HTTP methods
-- **Controllers**: Handle business logic and data processing
-- **Middleware**: Handle authentication, validation, error handling
-- **Models**: Database interactions and data management
-- **Utils**: Helper functions and utilities
+---
 
-## API Structure
+## API Endpoints
 
-All routes are prefixed with `/api/v1` and follow RESTful conventions.
+All endpoints are prefixed with `/api/v1`.
 
-### Authentication Routes (`/api/v1/auth`)
-- `POST /auth/register` - Register a new user
-- `POST /auth/login` - User login
-- `POST /auth/logout` - User logout
-- `POST /auth/refresh` - Refresh JWT token
-- `POST /auth/forgot-password` - Send password reset email
-- `POST /auth/reset-password` - Reset password with token
+### Authentication (`/api/v1/auth`)
+- `POST /auth/register` — Register a new user
+- `POST /auth/login` — User login
+- `POST /auth/logout` — User logout
+- `POST /auth/refresh` — Refresh JWT token
+- `POST /auth/forgot-password` — Send password reset email
+- `POST /auth/reset-password` — Reset password with token
 
-### User Routes (`/api/v1/users`)
-- `GET /users/me` - Get current user profile
-- `PUT /users/me` - Update current user profile
-- `DELETE /users/me` - Delete current user account
-- `GET /users/:userId` - Get user profile by ID
-- `GET /users/search` - Search users
-- `PUT /users/change-password` - Change password
+### Users (`/api/v1/users`)
+- `GET /users/me` — Get current user profile
+- `PUT /users/me` — Update current user profile
+- `DELETE /users/me` — Delete current user account
+- `GET /users/:userId` — Get user profile by ID
+- `GET /users/search` — Search users
+- `PUT /users/change-password` — Change password
 
-### Project Routes (`/api/v1/projects`)
-- `GET /projects` - Get user's projects
-- `POST /projects` - Create new project
-- `GET /projects/:projectId` - Get project details
-- `PUT /projects/:projectId` - Update project
-- `DELETE /projects/:projectId` - Delete project
-- `GET /projects/:projectId/members` - Get project members
-- `POST /projects/:projectId/members` - Add project member
-- `PUT /projects/:projectId/members/:userId` - Update member role
-- `DELETE /projects/:projectId/members/:userId` - Remove member
-- `POST /projects/:projectId/leave` - Leave project
-- `GET /projects/:projectId/stats` - Get project statistics
+### Projects (`/api/v1/projects`)
+- `GET /projects` — Get user's projects
+- `POST /projects` — Create new project
+- `GET /projects/:projectId` — Get project details
+- `PUT /projects/:projectId` — Update project
+- `DELETE /projects/:projectId` — Delete project
+- `GET /projects/:projectId/members` — Get project members
+- `POST /projects/:projectId/members` — Add project member
+- `PUT /projects/:projectId/members/:userId` — Update member role
+- `DELETE /projects/:projectId/members/:userId` — Remove member
+- `POST /projects/:projectId/leave` — Leave project
+- `GET /projects/:projectId/stats` — Get project statistics
 
-### Task Routes (`/api/v1/tasks`)
-- `GET /tasks` - Get user's tasks
-- `GET /projects/:projectId/tasks` - Get project tasks
-- `POST /projects/:projectId/tasks` - Create new task
-- `GET /tasks/:taskId` - Get task details
-- `PUT /tasks/:taskId` - Update task
-- `DELETE /tasks/:taskId` - Delete task
-- `PUT /tasks/:taskId/status` - Update task status
-- `PUT /tasks/:taskId/assign` - Assign task
-- `POST /tasks/:taskId/comments` - Add task comment
-- `GET /tasks/:taskId/comments` - Get task comments
-- `POST /tasks/bulk-update` - Bulk update tasks
+### Tasks (`/api/v1/tasks`)
+- `GET /tasks` — Get user's tasks
+- `GET /projects/:projectId/tasks` — Get project tasks
+- `POST /projects/:projectId/tasks` — Create new task
+- `GET /tasks/:taskId` — Get task details
+- `PUT /tasks/:taskId` — Update task
+- `DELETE /tasks/:taskId` — Delete task
+- `PUT /tasks/:taskId/status` — Update task status
+- `PUT /tasks/:taskId/assign` — Assign task
+- `POST /tasks/:taskId/comments` — Add task comment
+- `GET /tasks/:taskId/comments` — Get task comments
+- `POST /tasks/bulk-update` — Bulk update tasks
 
-### Message Routes (`/api/v1/messages`)
-- `GET /projects/:projectId/messages` - Get project messages
+### Messages (`/api/v1/messages`)
+- `GET /projects/:projectId/messages` — Get project messages
+
+### Notifications (`/api/v1/notifications`)
+- `GET /notifications` — Get user notifications
+- `POST /notifications/mark-read` — Mark notifications as read
+
+---
+
+## Database Schema
+
+### Users Table
+```sql
+CREATE TABLE Users (
+   user_id       INT AUTO_INCREMENT PRIMARY KEY,
+   name          VARCHAR(100) NOT NULL,           -- full name
+   email         VARCHAR(150) UNIQUE NOT NULL,    -- unique email
+   password      VARCHAR(255) NOT NULL,           -- hashed password
+   profile_image VARCHAR(255)                      -- optional avatar/photo
+);
+```
+
+### Projects Table
+```sql
+CREATE TABLE Projects (
+   project_id     INT AUTO_INCREMENT PRIMARY KEY,
+   owner_id       INT NOT NULL,                                -- who created the project
+   manager_id     INT NOT NULL,                                -- optional: assigned manager
+   name           VARCHAR(200) NOT NULL,
+   start_time     DATETIME NOT NULL,
+   deadline       DATETIME NOT NULL,
+   priority       ENUM('low','medium','high') DEFAULT 'low',
+   status         ENUM('waiting','progress','completed') DEFAULT 'waiting',
+   description    TEXT,
+   profile_image  VARCHAR(255),                                -- optional: main image/cover
+   created_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+   updated_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+   FOREIGN KEY (owner_id) REFERENCES Users(user_id),
+   FOREIGN KEY (manager_id) REFERENCES Users(user_id)
+);
+```
+
+### Tasks Table
+```sql
+CREATE TABLE Tasks (
+   task_id        INT AUTO_INCREMENT PRIMARY KEY,
+   name           VARCHAR(200) NOT NULL,                   -- task name
+   start_time     DATETIME NOT NULL,
+   deadline       DATETIME NOT NULL,
+   status         ENUM('progress','completed') DEFAULT 'progress',
+   description    TEXT,
+   profile_image  VARCHAR(255),                            -- optional image
+   created_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+   updated_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+```
+
+### ProjectTaskUser (Linking Table)
+```sql
+CREATE TABLE ProjectTaskUser (
+   project_id     INT NOT NULL,
+   task_id        INT NOT NULL,
+   user_id        INT NOT NULL,
+   role           ENUM('owner','manager','member') DEFAULT 'member',  -- optional role per task
+   PRIMARY KEY (project_id, task_id, user_id),
+   FOREIGN KEY (project_id) REFERENCES projects(project_id),
+   FOREIGN KEY (task_id) REFERENCES tasks(task_id),
+   FOREIGN KEY (user_id) REFERENCES users(user_id)
+);
+```
+
+### Invitations Table
+```sql
+CREATE TABLE Invitations (
+   invitation_id  INT AUTO_INCREMENT PRIMARY KEY,
+   user_id_from   INT NOT NULL,                            -- sender
+   user_id_to     INT NOT NULL,                            -- receiver
+   project_id     INT NOT NULL,                            -- project for which invitation is sent
+   status         ENUM('pending','accepted','declined') DEFAULT 'pending',
+   sent_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+   responded_at   TIMESTAMP NULL,
+   FOREIGN KEY (user_id_from) REFERENCES users(user_id),
+   FOREIGN KEY (user_id_to) REFERENCES users(user_id),
+   FOREIGN KEY (project_id) REFERENCES projects(project_id)
+);
+```
+
+### Tags Table
+```sql
+CREATE TABLE Tags (
+   tag_id      INT AUTO_INCREMENT PRIMARY KEY,
+   tag_name    VARCHAR(100) UNIQUE NOT NULL,
+   tag_type    ENUM('project','task') NOT NULL
+);
+```
+
+### ProjectTagLinks Table
+```sql
+CREATE TABLE ProjectTagLinks (
+   project_id   INT NOT NULL,
+   tag_id       INT NOT NULL,
+   PRIMARY KEY (project_id, tag_id),
+   FOREIGN KEY (project_id) REFERENCES projects(project_id),
+   FOREIGN KEY (tag_id) REFERENCES tags(tag_id)
+);
+```
+
+### TaskTagLinks Table
+```sql
+CREATE TABLE TaskTagLinks (
+   task_id      INT NOT NULL,
+   tag_id       INT NOT NULL,
+   PRIMARY KEY (task_id, tag_id),
+   FOREIGN KEY (task_id) REFERENCES tasks(task_id),
+   FOREIGN KEY (tag_id) REFERENCES tags(tag_id)
+);
+```
+
+---
+
+For more details, see `DATABASE_SCHEMA_README.md` and the `/controllers`, `/models`, and `/routes` folders.
 - `POST /projects/:projectId/messages` - Create message
 - `GET /messages/:messageId` - Get message details
 - `PUT /messages/:messageId` - Update message
