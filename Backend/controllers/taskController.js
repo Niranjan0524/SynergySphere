@@ -62,7 +62,7 @@ const getProjectTasks = asyncErrorHandler(async (req, res) => {
 const createTask = asyncErrorHandler(async (req, res) => {
   const userId = req.user.id;
   const { projectId } = req.params;
-  const { title, description, dueDate, priority, assigneeId, tags } = req.body;
+  const { title, description, dueDate, priority, status } = req.body;
 
   const taskData = {
     project_id: projectId,
@@ -70,7 +70,7 @@ const createTask = asyncErrorHandler(async (req, res) => {
     description,
     due_date: dueDate,
     priority: priority || 'medium',
-    assignee_id: assigneeId
+    status: status || 'progress'
   };
 
   const task = await Task.create(taskData, userId);
@@ -191,6 +191,8 @@ const updateTaskStatus = asyncErrorHandler(async (req, res) => {
  * Assign task to a user
  * PUT /api/v1/tasks/:taskId/assign
  */
+
+
 const assignTask = asyncErrorHandler(async (req, res) => {
   const userId = req.user.id;
   const { taskId } = req.params;

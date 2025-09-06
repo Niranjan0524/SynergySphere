@@ -1,4 +1,5 @@
 const { executeQuery, executeTransaction } = require('./database');
+const { createAppError } = require('../middleware/errorHandler');
 
 /**
  * Task Model - handles all task-related database operations
@@ -32,55 +33,50 @@ class Task {
 
   /**
    * Create a new task
-   */
-  static async create(taskData, creatorId) {
-    const { 
-      project_id, 
-      name, 
-      description, 
-      start_time,
-      deadline, 
-      status = 'progress', 
-      profile_image 
-    } = taskData;
+   */static async create(taskData, creatorId) {
+  const { 
+    project_id, 
+    title, 
+    description, 
+    due_date, 
+    priority = 'medium',
+    status = 'progress'
+  } = taskData;
+  
+  // Verify creator has access to project
+  const hasAccess = await executeQuery(
+    'SELECT ptu.project_id FROM ProjectTaskUser ptu WHERE ptu.project_id = ? AND ptu.user_id = ?',
+    [project_id, creatorId] 
+  );
+  
+  // if (!hasAccess.success || hasAccess.data.length === 0) {
+  //   throw createAppError('Access denied to project', 403);
+  // }
+  
+  const query = `
+    INSERT INTO Tasks (title, description, due_date, priority, status) 
+    VALUES (?, ?, ?, ?, ?)
+  `;
+  
+  const result = await executeQuery(query, [
+    title, description, due_date, priority, status
+  ]);
+  
+  if (result.success) {
+    const taskId = result.data.insertId;
     
-    // Verify creator has access to project
-    const hasAccess = await executeQuery(
-      'SELECT ptu.project_id FROM ProjectTaskUser ptu WHERE ptu.project_id = ? AND ptu.user_id = ?',
-      [project_id, creatorId]
-    );
-    
-    
-    if (!hasAccess.success || hasAccess.data.length === 0) {
-      throw new Error('Access denied to project');
-    }
-    
-    // If assignee specified, verify they're project member
-    if (assignee_id) {
-      const assigneeAccess = await executeQuery(
-        'SELECT pm.id FROM project_members pm WHERE pm.project_id = ? AND pm.user_id = ?',
-        [project_id, assignee_id]
-      );
-      
-      if (!assigneeAccess.success || assigneeAccess.data.length === 0) {
-        throw new Error('Assignee is not a project member');
-      }
-    }
-    
-    const query = `
-      INSERT INTO tasks (project_id, title, description, due_date, priority, assignee_id, created_by)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+    // Link task to project and creator
+    const linkQuery = `
+      INSERT INTO ProjectTaskUser (project_id, task_id, user_id, role) 
+      VALUES (?, ?, ?, 'creator')
     `;
     
-    const result = await executeQuery(query, [
-      project_id, title, description, due_date, priority, assignee_id, creatorId
-    ]);
+    await executeQuery(linkQuery, [project_id, taskId, creatorId]);
     
-    if (result.success) {
-      return await Task.findById(result.data.insertId, creatorId);
-    }
-    return null;
+    return await Task.findById(taskId, creatorId);
   }
+  return null;
+}
 
   /**
    * Update task
@@ -198,7 +194,7 @@ class Task {
     );
     
     if (!hasAccess.success || hasAccess.data.length === 0) {
-      throw new Error('Access denied to project');
+      throw createAppError('Access denied to project', 402);
     }
     
     let query = `
