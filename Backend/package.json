@@ -7,6 +7,10 @@
     "start": "node index.js",
     "dev": "nodemon index.js",
     "setup": "node setup.js",
+    "db:setup": "node setup-database.js setup",
+    "db:reset": "node setup-database.js reset",
+    "db:info": "node setup-database.js info",
+    "db:test": "node test-database.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

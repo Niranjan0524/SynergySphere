@@ -12,7 +12,7 @@ class Project {
     let query = `
       SELECT p.*, u.name as creator_name,
              (SELECT COUNT(DISTINCT ptu.user_id) FROM ProjectTaskUser ptu WHERE ptu.project_id = p.project_id) as member_count,
-             (SELECT COUNT(DISTINCT ptu.task_id) FROM ProjectTaskUser ptu WHERE ptu.project_id = p.project_id) as task_count,
+             (SELECT COUNT(DISTINCT ptu.task_id) FROM ProjectTaskUser ptu WHERE ptu.project_id = p.project_id AND ptu.task_id > 0) as task_count,
              (SELECT COUNT(DISTINCT t.task_id) FROM Tasks t JOIN ProjectTaskUser ptu ON t.task_id = ptu.task_id WHERE ptu.project_id = p.project_id AND t.status = 'completed') as completed_tasks
       FROM Projects p
       JOIN Users u ON p.owner_id = u.user_id
@@ -82,7 +82,7 @@ class Project {
     if (result.success) {
       const projectId = result.data.insertId;
       
-      // Add creator to ProjectTaskUser as owner
+      // Add creator to ProjectTaskUser as owner (using task_id = 0 for project-level membership)
       const linkQuery = `
         INSERT INTO ProjectTaskUser (project_id, user_id, task_id, role) 
         VALUES (?, ?, 0, 'owner')
@@ -99,16 +99,17 @@ class Project {
    * Update project
    */
   static async update(projectId, updateData, userId) {
-    // Check if user has permission to update
+    // Check if user has permission to update (must be owner or manager)
     const hasPermission = await Project.canManage(projectId, userId);
     if (!hasPermission) {
-      throw new Error('Permission denied');
+      throw new Error('Insufficient permissions to update project');
     }
     
-    const allowedFields = ['name', 'description', 'deadline', 'status', 'priority'];
+    const allowedFields = ['name', 'description', 'start_time', 'deadline', 'priority', 'status', 'profile_image', 'manager_id'];
     const fields = [];
     const values = [];
     
+    // Build dynamic update query
     Object.keys(updateData).forEach(key => {
       if (allowedFields.includes(key) && updateData[key] !== undefined) {
         fields.push(`${key} = ?`);
@@ -117,10 +118,10 @@ class Project {
     });
     
     if (fields.length === 0) {
-      return null;
+      return null; // No valid fields to update
     }
     
-    values.push(projectId);
+    values.push(projectId); // Add ID for WHERE clause
     
     const query = `UPDATE Projects SET ${fields.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE project_id = ?`;
     const result = await executeQuery(query, values);
@@ -135,17 +136,13 @@ class Project {
    * Delete project
    */
   static async delete(projectId, userId) {
-    // Check if user is project owner
-    const project = await executeQuery('SELECT owner_id FROM Projects WHERE project_id = ?', [projectId]);
-    
-    if (!project.success || project.data.length === 0) {
-      throw new Error('Project not found');
-    }
-    
-    if (project.data[0].owner_id !== userId) {
+    // Check if user is the owner
+    const project = await Project.findById(projectId, userId);
+    if (!project || project.owner_id !== userId) {
       throw new Error('Only project owner can delete the project');
     }
     
+    // This will cascade delete all related records due to foreign key constraints
     const query = 'DELETE FROM Projects WHERE project_id = ?';
     const result = await executeQuery(query, [projectId]);
     return result.success;
@@ -156,34 +153,38 @@ class Project {
    */
   static async getUserProjects(userId, filters = {}, limit = 20, offset = 0) {
     let query = `
-      SELECT p.*, ptu.role as user_role,
+      SELECT p.*, ptu.role as member_role,
              u.name as creator_name,
              (SELECT COUNT(DISTINCT ptu2.user_id) FROM ProjectTaskUser ptu2 WHERE ptu2.project_id = p.project_id) as member_count,
-             (SELECT COUNT(DISTINCT ptu2.task_id) FROM ProjectTaskUser ptu2 WHERE ptu2.project_id = p.project_id) as total_tasks,
-             (SELECT COUNT(DISTINCT t.task_id) FROM Tasks t JOIN ProjectTaskUser ptu2 ON t.task_id = ptu2.task_id WHERE ptu2.project_id = p.project_id AND t.status = 'completed') as completed_tasks
+             (SELECT COUNT(DISTINCT ptu2.task_id) FROM ProjectTaskUser ptu2 WHERE ptu2.project_id = p.project_id AND ptu2.task_id > 0) as task_count
       FROM Projects p
       JOIN ProjectTaskUser ptu ON p.project_id = ptu.project_id
       JOIN Users u ON p.owner_id = u.user_id
       WHERE ptu.user_id = ?
     `;
     
-    const params = [userId];
+    const queryParams = [userId];
     
     // Add filters
     if (filters.status) {
       query += ' AND p.status = ?';
-      params.push(filters.status);
+      queryParams.push(filters.status);
+    }
+    
+    if (filters.priority) {
+      query += ' AND p.priority = ?';
+      queryParams.push(filters.priority);
     }
     
     if (filters.search) {
       query += ' AND (p.name LIKE ? OR p.description LIKE ?)';
-      params.push(`%${filters.search}%`, `%${filters.search}%`);
+      queryParams.push(`%${filters.search}%`, `%${filters.search}%`);
     }
     
-    query += ' ORDER BY p.updated_at DESC LIMIT ? OFFSET ?';
-    params.push(limit, offset);
+    query += ' GROUP BY p.project_id, ptu.role, u.name ORDER BY p.updated_at DESC LIMIT ? OFFSET ?';
+    queryParams.push(limit, offset);
     
-    const result = await executeQuery(query, params);
+    const result = await executeQuery(query, queryParams);
     return result.success ? result.data : [];
   }
 
@@ -191,19 +192,25 @@ class Project {
    * Get project members
    */
   static async getMembers(projectId, userId) {
-    // Check if user has access to project
-    const hasAccess = await Project.hasAccess(projectId, userId);
+    // Verify user has access to project
+    const hasAccess = await Project.isMember(projectId, userId);
     if (!hasAccess) {
-      throw new Error('Access denied');
+      throw new Error('Access denied to project');
     }
     
     const query = `
-      SELECT ptu.*, u.name, u.email, u.profile_image, 
-             ptu.role
-      FROM ProjectTaskUser ptu
-      JOIN Users u ON ptu.user_id = u.user_id
+      SELECT u.user_id, u.name, u.email, u.profile_image, ptu.role,
+             ptu.created_at as joined_at
+      FROM Users u
+      JOIN ProjectTaskUser ptu ON u.user_id = ptu.user_id
       WHERE ptu.project_id = ? AND ptu.task_id = 0
-      ORDER BY ptu.role DESC, u.name ASC
+      ORDER BY 
+        CASE ptu.role 
+          WHEN 'owner' THEN 1 
+          WHEN 'manager' THEN 2 
+          ELSE 3 
+        END,
+        u.name ASC
     `;
     
     const result = await executeQuery(query, [projectId]);
@@ -214,44 +221,30 @@ class Project {
    * Add member to project
    */
   static async addMember(projectId, memberData, userId) {
-    // Check if user can manage project
-    const canManage = await Project.canManage(projectId, userId);
-    if (!canManage) {
-      throw new Error('Permission denied');
-    }
+    const { user_id, role = 'member' } = memberData;
     
-    const { userId: memberId, email, role = 'member' } = memberData;
-    let targetUserId = memberId;
-    
-    // If email provided, find user by email
-    if (!targetUserId && email) {
-      const userQuery = 'SELECT user_id FROM Users WHERE email = ?';
-      const userResult = await executeQuery(userQuery, [email]);
-      
-      if (!userResult.success || userResult.data.length === 0) {
-        throw new Error('User not found or inactive');
-      }
-      
-      targetUserId = userResult.data[0].user_id;
-    }
-    
-    if (!targetUserId) {
-      throw new Error('User ID or email required');
+    // Check if user has permission to add members (must be owner or manager)
+    const hasPermission = await Project.canManage(projectId, userId);
+    if (!hasPermission) {
+      throw new Error('Insufficient permissions to add members');
     }
     
     // Check if user is already a member
     const existingMember = await executeQuery(
       'SELECT project_id FROM ProjectTaskUser WHERE project_id = ? AND user_id = ? AND task_id = 0',
-      [projectId, targetUserId]
+      [projectId, user_id]
     );
     
     if (existingMember.success && existingMember.data.length > 0) {
-      throw new Error('User is already a project member');
+      throw new Error('User is already a member of this project');
     }
     
-    const query = 'INSERT INTO ProjectTaskUser (project_id, user_id, task_id, role) VALUES (?, ?, 0, ?)';
-    const result = await executeQuery(query, [projectId, targetUserId, role]);
+    const query = `
+      INSERT INTO ProjectTaskUser (project_id, user_id, task_id, role) 
+      VALUES (?, ?, 0, ?)
+    `;
     
+    const result = await executeQuery(query, [projectId, user_id, role]);
     return result.success;
   }
 
@@ -259,25 +252,29 @@ class Project {
    * Update member role
    */
   static async updateMemberRole(projectId, memberId, newRole, userId) {
-    // Check if user can manage project
-    const canManage = await Project.canManage(projectId, userId);
-    if (!canManage) {
-      throw new Error('Permission denied');
+    // Check if user has permission (must be owner)
+    const project = await Project.findById(projectId, userId);
+    if (!project || project.owner_id !== userId) {
+      throw new Error('Only project owner can update member roles');
     }
     
-    // Can't change project owner's role
-    const isOwner = await executeQuery(
-      'SELECT project_id FROM Projects WHERE project_id = ? AND owner_id = ?',
-      [projectId, memberId]
-    );
-    
-    if (isOwner.success && isOwner.data.length > 0) {
-      throw new Error('Cannot change project owner role');
+    // Cannot change owner's role
+    if (memberId === userId) {
+      throw new Error('Cannot change your own role');
     }
     
-    const query = 'UPDATE ProjectTaskUser SET role = ? WHERE project_id = ? AND user_id = ? AND task_id = 0';
+    const validRoles = ['member', 'manager'];
+    if (!validRoles.includes(newRole)) {
+      throw new Error('Invalid role');
+    }
+    
+    const query = `
+      UPDATE ProjectTaskUser 
+      SET role = ? 
+      WHERE project_id = ? AND user_id = ? AND task_id = 0
+    `;
+    
     const result = await executeQuery(query, [newRole, projectId, memberId]);
-    
     return result.success;
   }
 
@@ -285,69 +282,94 @@ class Project {
    * Remove member from project
    */
   static async removeMember(projectId, memberId, userId) {
-    // Check if user can manage project
-    const canManage = await Project.canManage(projectId, userId);
-    if (!canManage) {
-      throw new Error('Permission denied');
+    // Check if user has permission (must be owner or manager)
+    const hasPermission = await Project.canManage(projectId, userId);
+    if (!hasPermission) {
+      throw new Error('Insufficient permissions to remove members');
     }
     
-    // Can't remove project owner
-    const isOwner = await executeQuery(
-      'SELECT project_id FROM Projects WHERE project_id = ? AND owner_id = ?',
-      [projectId, memberId]
-    );
-    
-    if (isOwner.success && isOwner.data.length > 0) {
+    // Cannot remove the owner
+    const project = await Project.findById(projectId, userId);
+    if (project && project.owner_id === memberId) {
       throw new Error('Cannot remove project owner');
     }
     
-    const query = 'DELETE FROM ProjectTaskUser WHERE project_id = ? AND user_id = ? AND task_id = 0';
+    const query = 'DELETE FROM ProjectTaskUser WHERE project_id = ? AND user_id = ?';
     const result = await executeQuery(query, [projectId, memberId]);
-    
     return result.success;
   }
 
   /**
-   * Leave project (for members)
+   * Leave project
    */
-  static async leave(projectId, userId) {
-    // Can't leave if user is project owner
-    const isOwner = await executeQuery(
-      'SELECT project_id FROM Projects WHERE project_id = ? AND owner_id = ?',
-      [projectId, userId]
-    );
-    
-    if (isOwner.success && isOwner.data.length > 0) {
-      throw new Error('Project owner cannot leave the project');
+  static async leaveProject(projectId, userId) {
+    // Check if user is the owner
+    const project = await Project.findById(projectId, userId);
+    if (project && project.owner_id === userId) {
+      throw new Error('Project owner cannot leave the project. Transfer ownership or delete the project.');
     }
     
-    const query = 'DELETE FROM ProjectTaskUser WHERE project_id = ? AND user_id = ? AND task_id = 0';
+    const query = 'DELETE FROM ProjectTaskUser WHERE project_id = ? AND user_id = ?';
+    const result = await executeQuery(query, [projectId, userId]);
+    return result.success;
+  }
+
+  /**
+   * Check if user is a member of the project
+   */
+  static async isMember(projectId, userId) {
+    const query = 'SELECT project_id FROM ProjectTaskUser WHERE project_id = ? AND user_id = ?';
+    const result = await executeQuery(query, [projectId, userId]);
+    return result.success && result.data.length > 0;
+  }
+
+  /**
+   * Check if user can manage the project (owner or manager)
+   */
+  static async canManage(projectId, userId) {
+    const query = `
+      SELECT ptu.role, p.owner_id
+      FROM ProjectTaskUser ptu
+      JOIN Projects p ON p.project_id = ptu.project_id
+      WHERE ptu.project_id = ? AND ptu.user_id = ? AND ptu.task_id = 0
+    `;
+    
     const result = await executeQuery(query, [projectId, userId]);
     
-    return result.success;
+    if (result.success && result.data.length > 0) {
+      const member = result.data[0];
+      return member.owner_id === userId || ['owner', 'manager'].includes(member.role);
+    }
+    
+    return false;
   }
 
   /**
    * Get project statistics
    */
   static async getStats(projectId, userId) {
-    // Check access
-    const hasAccess = await Project.hasAccess(projectId, userId);
+    // Verify user has access to project
+    const hasAccess = await Project.isMember(projectId, userId);
     if (!hasAccess) {
-      throw new Error('Access denied');
+      throw new Error('Access denied to project');
     }
     
     const queries = [
-      'SELECT COUNT(DISTINCT ptu.task_id) as total_tasks FROM ProjectTaskUser ptu WHERE ptu.project_id = ? AND ptu.task_id > 0',
-      'SELECT COUNT(DISTINCT t.task_id) as completed_tasks FROM Tasks t JOIN ProjectTaskUser ptu ON t.task_id = ptu.task_id WHERE ptu.project_id = ? AND t.status = "completed"',
-      'SELECT COUNT(DISTINCT t.task_id) as pending_tasks FROM Tasks t JOIN ProjectTaskUser ptu ON t.task_id = ptu.task_id WHERE ptu.project_id = ? AND t.status = "progress"',
-      'SELECT COUNT(DISTINCT ptu.user_id) as total_members FROM ProjectTaskUser ptu WHERE ptu.project_id = ? AND ptu.task_id = 0'
+      `SELECT COUNT(DISTINCT ptu.user_id) as member_count 
+       FROM ProjectTaskUser ptu WHERE ptu.project_id = ?`,
+      `SELECT COUNT(DISTINCT ptu.task_id) as task_count 
+       FROM ProjectTaskUser ptu WHERE ptu.project_id = ? AND ptu.task_id > 0`,
+      `SELECT COUNT(DISTINCT t.task_id) as completed_tasks 
+       FROM Tasks t JOIN ProjectTaskUser ptu ON t.task_id = ptu.task_id 
+       WHERE ptu.project_id = ? AND t.status = 'completed'`,
+      `SELECT COUNT(DISTINCT t.task_id) as overdue_tasks 
+       FROM Tasks t JOIN ProjectTaskUser ptu ON t.task_id = ptu.task_id 
+       WHERE ptu.project_id = ? AND t.status = 'progress' AND t.deadline < NOW()`
     ];
     
     const stats = {};
     
-    for (let i = 0; i < queries.length; i++) {
-      const query = queries[i];
+    for (const query of queries) {
       const result = await executeQuery(query, [projectId]);
       if (result.success) {
         const key = query.match(/as (\w+)/)[1];
@@ -356,36 +378,6 @@ class Project {
     }
     
     return stats;
-  }
-
-  /**
-   * Check if user has access to project
-   */
-  static async hasAccess(projectId, userId) {
-    const query = `
-      SELECT p.project_id 
-      FROM Projects p
-      LEFT JOIN ProjectTaskUser ptu ON p.project_id = ptu.project_id AND ptu.user_id = ?
-      WHERE p.project_id = ? AND ptu.user_id IS NOT NULL
-    `;
-    
-    const result = await executeQuery(query, [userId, projectId]);
-    return result.success && result.data.length > 0;
-  }
-
-  /**
-   * Check if user can manage project (admin or owner)
-   */
-  static async canManage(projectId, userId) {
-    const query = `
-      SELECT p.project_id 
-      FROM Projects p
-      LEFT JOIN ProjectTaskUser ptu ON p.project_id = ptu.project_id AND ptu.user_id = ?
-      WHERE p.project_id = ? AND (p.owner_id = ? OR ptu.role IN ('owner', 'manager'))
-    `;
-    
-    const result = await executeQuery(query, [userId, projectId, userId]);
-    return result.success && result.data.length > 0;
   }
 }
 

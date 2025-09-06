@@ -10,7 +10,7 @@ class User {
    * Find user by ID
    */
   static async findById(id) {
-    const query = 'SELECT id, name, email, role, status, avatar_url, bio, created_at, updated_at, last_login FROM users WHERE id = ?';
+    const query = 'SELECT user_id, name, email, profile_image, created_at, updated_at FROM Users WHERE user_id = ?';
     const result = await executeQuery(query, [id]);
     
     if (result.success && result.data.length > 0) {
@@ -23,7 +23,7 @@ class User {
    * Find user by email
    */
   static async findByEmail(email) {
-    const query = 'SELECT * FROM users WHERE email = ?';
+    const query = 'SELECT * FROM Users WHERE email = ?';
     const result = await executeQuery(query, [email]);
     
     if (result.success && result.data.length > 0) {
@@ -36,18 +36,18 @@ class User {
    * Create a new user
    */
   static async create(userData) {
-    const { name, email, password, role = 'user' } = userData;
+    const { name, email, password } = userData;
     
     // Hash password
     const saltRounds = 12;
-    const password_hash = await bcrypt.hash(password, saltRounds);
+    const hashedPassword = await bcrypt.hash(password, saltRounds);
     
     const query = `
-      INSERT INTO users (name, email, password_hash, role) 
-      VALUES (?, ?, ?, ?)
+      INSERT INTO Users (name, email, password) 
+      VALUES (?, ?, ?)
     `;
     
-    const result = await executeQuery(query, [name, email, password_hash, role]);
+    const result = await executeQuery(query, [name, email, hashedPassword]);
     
     if (result.success) {
       return await User.findById(result.data.insertId);
@@ -59,7 +59,7 @@ class User {
    * Update user information
    */
   static async update(id, updateData) {
-    const allowedFields = ['name', 'email', 'bio', 'avatar_url'];
+    const allowedFields = ['name', 'email', 'profile_image'];
     const fields = [];
     const values = [];
     
@@ -77,7 +77,7 @@ class User {
     
     values.push(id); // Add ID for WHERE clause
     
-    const query = `UPDATE users SET ${fields.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`;
+    const query = `UPDATE Users SET ${fields.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?`;
     const result = await executeQuery(query, values);
     
     if (result.success) {
@@ -91,10 +91,10 @@ class User {
    */
   static async updatePassword(id, newPassword) {
     const saltRounds = 12;
-    const password_hash = await bcrypt.hash(newPassword, saltRounds);
+    const hashedPassword = await bcrypt.hash(newPassword, saltRounds);
     
-    const query = 'UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?';
-    const result = await executeQuery(query, [password_hash, id]);
+    const query = 'UPDATE Users SET password = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?';
+    const result = await executeQuery(query, [hashedPassword, id]);
     
     return result.success;
   }
@@ -107,11 +107,12 @@ class User {
   }
 
   /**
-   * Update last login timestamp
+   * Update last login timestamp - Note: This field doesn't exist in new schema
    */
   static async updateLastLogin(id) {
-    const query = 'UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?';
-    return await executeQuery(query, [id]);
+    // This functionality is removed as last_login field doesn't exist in new schema
+    // If needed, you can add a separate login_logs table or add the field back to Users table
+    return { success: true, message: 'Last login tracking not implemented in current schema' };
   }
 
   /**
@@ -119,9 +120,9 @@ class User {
    */
   static async search(searchTerm, limit = 10, offset = 0) {
     const query = `
-      SELECT id, name, email, avatar_url, status 
-      FROM users 
-      WHERE (name LIKE ? OR email LIKE ?) AND status = 'active'
+      SELECT user_id, name, email, profile_image 
+      FROM Users 
+      WHERE (name LIKE ? OR email LIKE ?)
       ORDER BY name ASC 
       LIMIT ? OFFSET ?
     `;
@@ -133,24 +134,14 @@ class User {
   }
 
   /**
-   * Get all users (admin only)
+   * Get all users
    */
   static async getAll(limit = 50, offset = 0, filters = {}) {
-    let query = 'SELECT id, name, email, role, status, avatar_url, created_at, last_login FROM users';
+    let query = 'SELECT user_id, name, email, profile_image, created_at FROM Users';
     const queryParams = [];
     const conditions = [];
     
     // Add filters
-    if (filters.status) {
-      conditions.push('status = ?');
-      queryParams.push(filters.status);
-    }
-    
-    if (filters.role) {
-      conditions.push('role = ?');
-      queryParams.push(filters.role);
-    }
-    
     if (filters.search) {
       conditions.push('(name LIKE ? OR email LIKE ?)');
       queryParams.push(`%${filters.search}%`, `%${filters.search}%`);
@@ -171,23 +162,18 @@ class User {
    * Delete user
    */
   static async delete(id) {
-    const query = 'DELETE FROM users WHERE id = ?';
+    const query = 'DELETE FROM Users WHERE user_id = ?';
     const result = await executeQuery(query, [id]);
     return result.success;
   }
 
   /**
-   * Update user status (activate/deactivate/suspend)
+   * Update user status (activate/deactivate/suspend) - Not implemented in new schema
    */
   static async updateStatus(id, status) {
-    const validStatuses = ['active', 'inactive', 'suspended'];
-    if (!validStatuses.includes(status)) {
-      throw new Error('Invalid status');
-    }
-    
-    const query = 'UPDATE users SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?';
-    const result = await executeQuery(query, [status, id]);
-    return result.success;
+    // This functionality is removed as status field doesn't exist in new schema
+    // If needed, you can add a status field back to Users table
+    throw new Error('Status functionality not implemented in current schema');
   }
 
   /**
@@ -195,9 +181,9 @@ class User {
    */
   static async isProjectMember(userId, projectId) {
     const query = `
-      SELECT pm.id 
-      FROM project_members pm 
-      WHERE pm.user_id = ? AND pm.project_id = ?
+      SELECT ptu.project_id 
+      FROM ProjectTaskUser ptu 
+      WHERE ptu.user_id = ? AND ptu.project_id = ?
     `;
     
     const result = await executeQuery(query, [userId, projectId]);
@@ -205,17 +191,17 @@ class User {
   }
 
   /**
-   * Check if user is admin of a specific project
+   * Check if user is admin/owner/manager of a specific project
    */
   static async isProjectAdmin(userId, projectId) {
     const query = `
-      SELECT pm.id 
-      FROM project_members pm 
-      WHERE pm.user_id = ? AND pm.project_id = ? AND pm.role = 'admin'
+      SELECT ptu.project_id 
+      FROM ProjectTaskUser ptu 
+      WHERE ptu.user_id = ? AND ptu.project_id = ? AND ptu.role IN ('owner', 'manager')
       UNION
-      SELECT p.id 
-      FROM projects p 
-      WHERE p.created_by = ? AND p.id = ?
+      SELECT p.project_id 
+      FROM Projects p 
+      WHERE p.owner_id = ? AND p.project_id = ?
     `;
     
     const result = await executeQuery(query, [userId, projectId, userId, projectId]);
@@ -227,14 +213,15 @@ class User {
    */
   static async getProjects(userId, limit = 20, offset = 0) {
     const query = `
-      SELECT p.*, pm.role as member_role,
+      SELECT p.*, ptu.role as member_role,
              u.name as creator_name,
-             (SELECT COUNT(*) FROM project_members pm2 WHERE pm2.project_id = p.id) as member_count,
-             (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id) as task_count
-      FROM projects p
-      JOIN project_members pm ON p.id = pm.project_id
-      JOIN users u ON p.created_by = u.id
-      WHERE pm.user_id = ?
+             (SELECT COUNT(DISTINCT ptu2.user_id) FROM ProjectTaskUser ptu2 WHERE ptu2.project_id = p.project_id) as member_count,
+             (SELECT COUNT(*) FROM Tasks t WHERE EXISTS (SELECT 1 FROM ProjectTaskUser ptu3 WHERE ptu3.task_id = t.task_id AND ptu3.project_id = p.project_id)) as task_count
+      FROM Projects p
+      JOIN ProjectTaskUser ptu ON p.project_id = ptu.project_id
+      JOIN Users u ON p.owner_id = u.user_id
+      WHERE ptu.user_id = ?
+      GROUP BY p.project_id, ptu.role, u.name
       ORDER BY p.updated_at DESC
       LIMIT ? OFFSET ?
     `;
@@ -248,10 +235,9 @@ class User {
    */
   static async getStats(userId) {
     const queries = [
-      'SELECT COUNT(*) as project_count FROM project_members WHERE user_id = ?',
-      'SELECT COUNT(*) as task_count FROM tasks WHERE assignee_id = ?',
-      'SELECT COUNT(*) as completed_tasks FROM tasks WHERE assignee_id = ? AND status = "completed"',
-      'SELECT COUNT(*) as created_tasks FROM tasks WHERE created_by = ?'
+      'SELECT COUNT(DISTINCT project_id) as project_count FROM ProjectTaskUser WHERE user_id = ?',
+      'SELECT COUNT(DISTINCT task_id) as task_count FROM ProjectTaskUser WHERE user_id = ?',
+      'SELECT COUNT(DISTINCT t.task_id) as completed_tasks FROM Tasks t JOIN ProjectTaskUser ptu ON t.task_id = ptu.task_id WHERE ptu.user_id = ? AND t.status = "completed"'
     ];
     
     const stats = {};

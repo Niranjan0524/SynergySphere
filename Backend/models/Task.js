@@ -12,17 +12,18 @@ class Task {
     const query = `
       SELECT t.*, 
              p.name as project_name,
-             p.id as project_id,
-             creator.name as created_by_name,
-             assignee.name as assignee_name,
-             assignee.email as assignee_email,
-             assignee.avatar_url as assignee_avatar
-      FROM tasks t
-      JOIN projects p ON t.project_id = p.id
-      JOIN users creator ON t.created_by = creator.id
-      LEFT JOIN users assignee ON t.assignee_id = assignee.id
-      JOIN project_members pm ON p.id = pm.project_id
-      WHERE t.id = ? AND pm.user_id = ?
+             p.project_id as project_id,
+             u.name as assignee_name,
+             u.email as assignee_email,
+             u.profile_image as assignee_avatar
+      FROM Tasks t
+      JOIN ProjectTaskUser ptu ON t.task_id = ptu.task_id
+      JOIN Projects p ON ptu.project_id = p.project_id
+      LEFT JOIN Users u ON ptu.user_id = u.user_id AND ptu.role != 'owner'
+      WHERE t.task_id = ? AND EXISTS (
+        SELECT 1 FROM ProjectTaskUser ptu2 
+        WHERE ptu2.project_id = ptu.project_id AND ptu2.user_id = ?
+      )
     `;
     
     const result = await executeQuery(query, [taskId, userId]);
@@ -35,18 +36,20 @@ class Task {
   static async create(taskData, creatorId) {
     const { 
       project_id, 
-      title, 
+      name, 
       description, 
-      due_date, 
-      priority = 'medium', 
-      assignee_id 
+      start_time,
+      deadline, 
+      status = 'progress', 
+      profile_image 
     } = taskData;
     
     // Verify creator has access to project
     const hasAccess = await executeQuery(
-      'SELECT pm.id FROM project_members pm WHERE pm.project_id = ? AND pm.user_id = ?',
+      'SELECT ptu.project_id FROM ProjectTaskUser ptu WHERE ptu.project_id = ? AND ptu.user_id = ?',
       [project_id, creatorId]
     );
+    
     
     if (!hasAccess.success || hasAccess.data.length === 0) {
       throw new Error('Access denied to project');

@@ -70,10 +70,10 @@ const startServer = async () => {
     app.listen(PORT, () => {
       console.log(`🚀 SynergySphere Backend Server running on http://localhost:${PORT}`);
       console.log(`📊 Health check: http://localhost:${PORT}/health`);
-      console.log(`📖 API Documentation: http://localhost:${PORT}/docs`);
-      console.log(`🔗 API Base URL: http://localhost:${PORT}/api/v1`);
+      console.log(` API Base URL: http://localhost:${PORT}`);
       console.log(`🗄️  Database: ${dbConnected ? '✅ Connected' : '❌ Not Connected'}`);
       console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+      console.log(`📋 Available routes: /auth, /users, /projects, /tasks, /notifications, /admin`);
     });
   } catch (error) {
     console.error('❌ Failed to start server:', error.message);

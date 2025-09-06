@@ -81,9 +81,11 @@ const executeTransaction = async (queries) => {
 const getDatabaseStats = async () => {
   try {
     const queries = [
-      'SELECT COUNT(*) as user_count FROM users',
-      'SELECT COUNT(*) as project_count FROM projects',
-      'SELECT COUNT(*) as task_count FROM tasks'
+      'SELECT COUNT(*) as user_count FROM Users',
+      'SELECT COUNT(*) as project_count FROM Projects',
+      'SELECT COUNT(*) as task_count FROM Tasks',
+      'SELECT COUNT(*) as invitation_count FROM Invitations',
+      'SELECT COUNT(*) as tag_count FROM Tags'
     ];
 
     const results = {};
@@ -105,7 +107,16 @@ const getDatabaseStats = async () => {
  */
 const verifyDatabaseStructure = async () => {
   try {
-    const requiredTables = ['users', 'projects', 'project_members', 'tasks', 'notifications'];
+    const requiredTables = [
+      'Users', 
+      'Projects', 
+      'Tasks', 
+      'ProjectTaskUser', 
+      'Invitations', 
+      'Tags', 
+      'ProjectTagLinks', 
+      'TaskTagLinks'
+    ];
     const { data: tables } = await executeQuery('SHOW TABLES');
     
     const existingTables = tables.map(row => Object.values(row)[0]);
