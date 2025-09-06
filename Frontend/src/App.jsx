@@ -13,7 +13,7 @@ function App() {
           <div className="App min-h-screen bg-white dark:bg-gray-900 transition-colors duration-200">
             <AppRoutes />
             {/* Remove this in production */}
-            {process.env.NODE_ENV === 'development' && <TestNavigation />}
+            {process.env.NODE_ENV === 'development'}
           </div>
         </Router>
       </AuthProvider>
