@@ -6,7 +6,7 @@ import Sidebar from './Sidebar';
 import ProjectAddorEdit from './ProjectAddorEdit';
 
 const Dashboard = () => {
-  const { currentUser, signOut } = useAuth();
+  const { currentUser, signOut, userId, userName, userEmail, token } = useAuth();
   const [showSidebar, setShowSidebar] = useState(false);
   const [showProjectModal, setShowProjectModal] = useState(false);
   const navigate = useNavigate();
@@ -14,6 +14,7 @@ const Dashboard = () => {
   const handleSignOut = async () => {
     try {
       await signOut();
+      navigate('/');
     } catch (error) {
       console.error('Failed to sign out:', error);
     }
@@ -60,14 +61,26 @@ const Dashboard = () => {
           <div className="px-4 py-6 sm:px-0">
             {/* Welcome Section */}
             <div className="bg-primary-600 dark:bg-primary-700 rounded-lg p-8 text-white mb-8 transition-colors duration-200">
-              <h2 className="text-2xl font-bold mb-2">Welcome to SynergySphere! 🚀</h2>
+              <h2 className="text-2xl font-bold mb-2">Welcome back, {userName}! 🚀</h2>
               <p className="text-primary-100 dark:text-primary-200 mb-4">
-                You've successfully signed in. This is your team collaboration dashboard.
+                You've successfully signed in to your SynergySphere dashboard.
               </p>
+              
+              {/* User Details */}
+              <div className="bg-white/10 rounded-lg p-4 mb-4">
+                <h3 className="font-semibold mb-2">User Information:</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+                  <p><strong>User ID:</strong> {userId}</p>
+                  <p><strong>Name:</strong> {userName}</p>
+                  <p><strong>Email:</strong> {userEmail}</p>
+                  <p><strong>Status:</strong> <span className="text-green-300">Active</span></p>
+                </div>
+              </div>
+              
               <div className="bg-white/10 rounded-lg p-4">
                 <p className="text-sm">
                   <strong>Next Steps:</strong> The full project management features including project creation, 
-                  task management, and team collaboration tools will be implemented next.
+                  task management, and team collaboration tools are ready to use.
                 </p>
               </div>
             </div>

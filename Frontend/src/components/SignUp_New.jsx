@@ -46,7 +46,7 @@ const SignUp = () => {
       setError('');
       setLoading(true);
       // Send data to backend API
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/signup`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, email, password })
