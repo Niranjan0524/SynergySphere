@@ -1,1 +1,9 @@
 @import "tailwindcss";
+
+/* SynergySphere App Styles */
+.App {
+  min-height: 100vh;
+  width: 100%;
+}
+
+/* Additional custom styles can be added here */
