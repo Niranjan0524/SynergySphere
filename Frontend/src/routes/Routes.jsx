@@ -2,8 +2,8 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import Login from '../components/Login';
-import SignUp from '../components/SignUp';
-import ForgotPassword from '../components/ForgotPassword';
+import SignUp from '../components/SignUp_New';
+import ForgotPassword from '../components/ForgotPassword_New';
 import Dashboard from '../components/Dashboard';
 
 // Protected Route Component
