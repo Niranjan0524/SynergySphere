@@ -8,7 +8,24 @@ import ProjectAddorEdit from './ProjectAddorEdit';
 const Dashboard = () => {
   const { currentUser, userId, userName, userEmail, getAuthHeaders } = useAuth();
   const [showProjectModal, setShowProjectModal] = useState(false);
-  const [projects, setProjects] = useState([]);
+  const [projects, setProjects] = useState([
+    {
+      project_id: 101,
+      name: 'Demo Project Alpha',
+      status: 'progress',
+      priority: 'high',
+      deadline: '2025-12-01',
+      progress: 45
+    },
+    {
+      project_id: 102,
+      name: 'Demo Project Beta',
+      status: 'waiting',
+      priority: 'medium',
+      deadline: '2025-12-15',
+      progress: 0
+    }
+  ]);
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
@@ -24,70 +41,56 @@ const Dashboard = () => {
     const fetchDashboardData = async () => {
       try {
         setLoading(true);
+        setProjects([]);
+        setTasks([]);
+        // Only fetch if user is logged in
+        if (!currentUser?.userId) return;
+
+        // Fetch projects (same as ProjectPage.jsx)
+        const response = await fetch(`${import.meta.env.VITE_API_URL}/projects/getProjects/${currentUser.userId}`, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${currentUser?.token || localStorage.getItem('token')}`
+          }
+        });
         
-        // Mock data - replace with actual API calls
-        const mockProjects = [
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.message || 'Failed to fetch projects');
+        }
+        const fetchedProjects = data.data?.projects || [];
+        
+        const demoProjects = [
           {
-            project_id: 1,
-            name: 'Website Redesign',
+            project_id: 101,
+            name: 'Demo Project Alpha',
             status: 'progress',
             priority: 'high',
-            deadline: '2025-10-15',
-            progress: 65
+            deadline: '2025-12-01',
+            progress: 45
           },
           {
-            project_id: 2,
-            name: 'Mobile App Development',
-            status: 'progress',
+            project_id: 102,
+            name: 'Demo Project Beta',
+            status: 'waiting',
             priority: 'medium',
-            deadline: '2025-11-30',
-            progress: 30
-          },
-          {
-            project_id: 3,
-            name: 'Database Migration',
-            status: 'completed',
-            priority: 'high',
-            deadline: '2025-09-01',
-            progress: 100
+            deadline: '2025-12-15',
+            progress: 0
           }
         ];
+        setProjects(demoProjects);
 
-        const mockTasks = [
-          {
-            task_id: 1,
-            name: 'Design homepage mockup',
-            status: 'progress',
-            deadline: '2025-09-10',
-            project_name: 'Website Redesign'
-          },
-          {
-            task_id: 2,
-            name: 'Implement authentication',
-            status: 'progress',
-            deadline: '2025-09-15',
-            project_name: 'Mobile App Development'
-          },
-          {
-            task_id: 3,
-            name: 'User testing',
-            status: 'completed',
-            deadline: '2025-09-05',
-            project_name: 'Website Redesign'
-          }
-        ];
+        // Optionally, fetch tasks here if you have a tasks API
+        // For now, keep tasks as []
 
-        setProjects(mockProjects);
-        setTasks(mockTasks);
-        
         // Calculate stats
         setStats({
-          totalProjects: mockProjects.length,
-          activeTasks: mockTasks.filter(task => task.status === 'progress').length,
-          completedTasks: mockTasks.filter(task => task.status === 'completed').length,
-          overdueTasks: mockTasks.filter(task => new Date(task.deadline) < new Date() && task.status !== 'completed').length
+          totalProjects: fetchedProjects.length,
+          activeTasks: 0, // Update if you fetch tasks
+          completedTasks: 0, // Update if you fetch tasks
+          overdueTasks: 0 // Update if you fetch tasks
         });
-
       } catch (error) {
         console.error('Failed to fetch dashboard data:', error);
       } finally {
@@ -96,7 +99,7 @@ const Dashboard = () => {
     };
 
     fetchDashboardData();
-  }, []);
+  }, [currentUser?.userId]);
 
   const getPriorityColor = (priority) => {
     switch (priority) {

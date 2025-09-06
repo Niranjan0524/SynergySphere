@@ -40,6 +40,8 @@ export default function ProjectCard({ project, task }) {
           src={task.image}
           alt={task.title}
           className="w-full h-full object-cover"
+          loading="lazy"
+          defaultValue={"image"}
         />
       </div>
 
